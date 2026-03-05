@@ -8,6 +8,7 @@ Este diretório foi estruturado com base no commit `24d9391109b9055c6efe9e43dd3c
 
 - `notebooks/Intro_to_Jupyter_notebooks.ipynb`: introdução ao uso de notebooks.
 - `notebooks/Crossref_API_query_template.ipynb`: template oficial de consulta da API `/works`.
+- `notebooks/Crossref_Insight_Colab.ipynb`: notebook pronto para Google Colab com resumo, autores/termos frequentes e gráficos.
 - `crossref_client.py`: módulo com funções de integração com a API Crossref.
 - `Untitled-1.py`: CLI do projeto (wrapper para `crossref_client.py`).
 - `streamlit_app.py`: interface web com Streamlit.
@@ -73,6 +74,13 @@ A interface permite:
 - informações técnicas da API (status, message-type, items-per-page e parâmetros enviados);
 - gráficos de distribuição (anos, tipos, autores, termos, editoras e periódicos);
 - download dos resultados em JSON e CSV.
+
+## Abrir no Google Colab
+
+[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/lucaslmfbib/apicrossref/blob/main/notebooks/Crossref_Insight_Colab.ipynb)
+
+Notebook direto:
+- `notebooks/Crossref_Insight_Colab.ipynb`
 
 ## Se a busca não funcionar
 
