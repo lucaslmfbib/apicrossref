@@ -191,6 +191,13 @@ def rows_to_csv(rows: List[Dict[str, Any]]) -> str:
     return output.getvalue()
 
 
+def dataframe_to_parquet_bytes(df: pd.DataFrame) -> bytes:
+    """Converte DataFrame para Parquet em memória."""
+    buffer = io.BytesIO()
+    df.to_parquet(buffer, index=False)
+    return buffer.getvalue()
+
+
 def get_year(item: Dict[str, Any]) -> Optional[int]:
     """Extrai ano de publicação."""
     year = item.get("issued", {}).get("date-parts", [[None]])[0][0]
@@ -394,6 +401,12 @@ def render_api_details(
     with col2:
         st.markdown("**Parâmetros enviados**")
         st.write(f"Timeout: `{timeout}` segundos")
+        st.write(f"Estratégia de paginação: `{query_params.get('_strategy', 'offset')}`")
+        if query_params.get("_pages_requested") is not None:
+            st.write(
+                "Páginas (solicitadas/obtidas): "
+                f"`{query_params.get('_pages_requested')}/{query_params.get('_pages_retrieved', '-')}`"
+            )
         st.write(f"Início da query (start-index): `{query_meta.get('start-index', '-')}`")
         st.write(f"Tamanho da busca (search-terms): `{query_meta.get('search-terms', '-')}`")
         st.write(f"Filtros: `{filters if filters else '-'}`")
@@ -485,6 +498,138 @@ def get_works_paginated(
     )
 
 
+def get_works_cursor_paginated(
+    *,
+    base_params: Dict[str, Any],
+    filters: Dict[str, str],
+    pages: int,
+    timeout: float,
+    mailto: Optional[str],
+) -> tuple[Dict[str, Any], int, Dict[str, Any]]:
+    """Consulta múltiplas páginas via cursor e agrega os itens em um único payload."""
+    requested_pages = max(1, int(pages))
+    current_cursor = "*"
+    items_all: List[Dict[str, Any]] = []
+    first_payload: Optional[Dict[str, Any]] = None
+    retrieved_pages = 0
+
+    for _ in range(requested_pages):
+        page_params = dict(base_params)
+        page_params.pop("offset", None)
+        page_params["cursor"] = current_cursor
+
+        js, status = get_works(
+            page_params,
+            filters,
+            timeout=timeout,
+            mailto=mailto,
+        )
+        if status != 200:
+            return (
+                js,
+                status,
+                {
+                    "pages_requested": requested_pages,
+                    "pages_retrieved": retrieved_pages,
+                    "cursor_mode": True,
+                },
+            )
+
+        if first_payload is None:
+            first_payload = js
+
+        message = js.get("message", {})
+        page_items = message.get("items", []) or []
+        items_all.extend(page_items)
+        retrieved_pages += 1
+
+        next_cursor = message.get("next-cursor")
+        if not page_items or not next_cursor or next_cursor == current_cursor:
+            break
+        current_cursor = next_cursor
+
+    if first_payload is None:
+        return (
+            {},
+            500,
+            {
+                "pages_requested": requested_pages,
+                "pages_retrieved": 0,
+                "cursor_mode": True,
+            },
+        )
+
+    merged = dict(first_payload)
+    merged_message = dict(first_payload.get("message", {}))
+    merged_message["items"] = items_all
+    merged_message["retrieved-pages"] = retrieved_pages
+    merged_message["retrieved-items"] = len(items_all)
+    merged["message"] = merged_message
+
+    return (
+        merged,
+        200,
+        {
+            "pages_requested": requested_pages,
+            "pages_retrieved": retrieved_pages,
+            "cursor_mode": True,
+        },
+    )
+
+
+@st.cache_data(ttl=1800, max_entries=25, show_spinner=False)
+def _fetch_works_cached(
+    *,
+    strategy: str,
+    base_params_json: str,
+    filters_json: str,
+    pages: int,
+    timeout: float,
+    mailto: str,
+) -> tuple[Dict[str, Any], int, Dict[str, Any]]:
+    """Executa consulta com cache para acelerar buscas repetidas."""
+    base_params = json.loads(base_params_json)
+    filters = json.loads(filters_json)
+    mailto_value = mailto or None
+
+    if strategy == "cursor":
+        return get_works_cursor_paginated(
+            base_params=base_params,
+            filters=filters,
+            pages=pages,
+            timeout=timeout,
+            mailto=mailto_value,
+        )
+
+    return get_works_paginated(
+        base_params=base_params,
+        filters=filters,
+        pages=pages,
+        timeout=timeout,
+        mailto=mailto_value,
+    )
+
+
+def fetch_works(
+    *,
+    strategy: str,
+    base_params: Dict[str, Any],
+    filters: Dict[str, str],
+    pages: int,
+    timeout: float,
+    mailto: Optional[str],
+) -> tuple[Dict[str, Any], int, Dict[str, Any]]:
+    """Wrapper de busca com serialização para cache estável."""
+    return _fetch_works_cached(
+        strategy=strategy,
+        base_params_json=json.dumps(base_params, sort_keys=True, ensure_ascii=False),
+        filters_json=json.dumps(filters, sort_keys=True, ensure_ascii=False),
+        pages=pages,
+        timeout=timeout,
+        mailto=mailto or "",
+    )
+
+
 def render_query_results(
     *,
     query: str,
@@ -495,11 +640,13 @@ def render_query_results(
     timeout: float,
     top_authors_n: int,
     top_terms_n: int,
+    table_preview_rows: int,
 ) -> None:
     """Renderiza painel completo da consulta por query."""
     message = js.get("message", {})
     items = message.get("items", [])
     normalized = [normalize_item(item) for item in items]
+    normalized_df = pd.DataFrame(normalized)
 
     total_results = message.get("total-results", "?")
     summary = build_work_summary(query, filters, items, total_results)
@@ -599,8 +746,21 @@ def render_query_results(
             st.info("Sem dados de periódico para análise.")
 
     st.subheader("Resultados detalhados")
-    if normalized:
-        st.dataframe(normalized, use_container_width=True)
+    if not normalized_df.empty:
+        if len(normalized_df) > table_preview_rows:
+            st.caption(
+                f"Mostrando prévia com {table_preview_rows} de {len(normalized_df)} linhas "
+                "(visualização completa pode ficar lenta)."
+            )
+            st.dataframe(normalized_df.head(table_preview_rows), use_container_width=True)
+            if st.checkbox(
+                "Exibir tabela completa (pode ficar lento)",
+                value=False,
+                key="show_full_results_table",
+            ):
+                st.dataframe(normalized_df, use_container_width=True)
+        else:
+            st.dataframe(normalized_df, use_container_width=True)
     else:
         st.info("Sem itens para exibir na tabela normalizada.")
 
@@ -614,7 +774,16 @@ def render_query_results(
         "years": year_df.to_dict(orient="records"),
     }
 
-    down_col1, down_col2, down_col3 = st.columns(3)
+    csv_content = normalized_df.to_csv(index=False) if not normalized_df.empty else ""
+    parquet_content = b""
+    parquet_error = None
+    if not normalized_df.empty:
+        try:
+            parquet_content = dataframe_to_parquet_bytes(normalized_df)
+        except Exception as error:  # noqa: BLE001
+            parquet_error = str(error)
+
+    down_col1, down_col2, down_col3, down_col4 = st.columns(4)
     with down_col1:
         st.download_button(
             label="Baixar resposta JSON",
@@ -624,7 +793,6 @@ def render_query_results(
             use_container_width=True,
         )
     with down_col2:
-        csv_content = rows_to_csv(normalized)
         st.download_button(
             label="Baixar tabela CSV",
             data=csv_content,
@@ -641,6 +809,17 @@ def render_query_results(
             mime="application/json",
             use_container_width=True,
         )
+    with down_col4:
+        st.download_button(
+            label="Baixar tabela Parquet",
+            data=parquet_content,
+            file_name="crossref_query.parquet",
+            mime="application/octet-stream",
+            disabled=not bool(parquet_content),
+            use_container_width=True,
+        )
+        if parquet_error:
+            st.caption(f"Parquet indisponível: {parquet_error}")
 
     render_api_details(js=js, status=status, query_params=params, filters=filters, timeout=timeout)
 
@@ -723,12 +902,27 @@ def main() -> None:
     with st.sidebar:
         st.subheader("Configuração")
         mailto = st.text_input("Email (mailto)", placeholder="seu-email@exemplo.com")
+        pagination_mode = st.selectbox(
+            "Paginação",
+            options=[
+                "cursor (recomendado para volume alto)",
+                "offset (simples e direto)",
+            ],
+            index=0,
+        )
         timeout = st.number_input(
             "Timeout (segundos)",
             min_value=5.0,
             max_value=120.0,
             value=20.0,
             step=1.0,
+        )
+        table_preview_rows = st.slider(
+            "Linhas na tabela (preview)",
+            min_value=100,
+            max_value=5000,
+            value=1000,
+            step=100,
         )
         top_authors_n = st.slider("Top autores", min_value=5, max_value=20, value=10, step=1)
         top_terms_n = st.slider("Top termos nos títulos", min_value=5, max_value=25, value=15, step=1)
@@ -738,20 +932,32 @@ def main() -> None:
         st.write(f"Endpoint: `{WORKS_ENDPOINT}`")
         st.markdown(f"[Documentação oficial]({DOCS_URL})")
         st.caption("Dica: inclua `mailto` para identificação do cliente na API.")
+        if st.button("Limpar cache de consultas", use_container_width=True):
+            st.cache_data.clear()
+            st.success("Cache limpo.")
 
     query_tab, doi_tab = st.tabs(["Busca por Query", "Busca por DOI"])
 
     with query_tab:
         with st.form("query_form"):
             query = st.text_input("Consulta", placeholder="deep learning")
+            strategy = "cursor" if pagination_mode.startswith("cursor") else "offset"
 
             col1, col2, col3 = st.columns(3)
             with col1:
                 rows = st.number_input("Rows por página", min_value=1, max_value=1000, value=100, step=1)
             with col2:
-                offset = st.number_input("Offset", min_value=0, max_value=100000, value=0, step=1)
+                offset = st.number_input(
+                    "Offset",
+                    min_value=0,
+                    max_value=100000,
+                    value=0,
+                    step=1,
+                    disabled=(strategy == "cursor"),
+                    help="Usado apenas no modo offset.",
+                )
             with col3:
-                pages = st.number_input("Páginas", min_value=1, max_value=20, value=3, step=1)
+                pages = st.number_input("Páginas", min_value=1, max_value=50, value=5, step=1)
 
             select_raw = st.text_input(
                 "Campos select (separados por vírgula; vazio = campos completos)",
@@ -773,7 +979,7 @@ def main() -> None:
                     filters = parse_filters(filters_raw)
                     select_fields = parse_select(select_raw)
                     target_total = int(rows) * int(pages)
-                    if target_total > 5000:
+                    if target_total > 10000:
                         st.warning(
                             "Você solicitou muitos registros de uma vez. "
                             "Pode ficar lento ou sofrer limite de API."
@@ -782,15 +988,17 @@ def main() -> None:
                     params: Dict[str, Any] = {
                         "query": query.strip(),
                         "rows": int(rows),
-                        "offset": int(offset),
                     }
+                    if strategy == "offset":
+                        params["offset"] = int(offset)
                     if select_fields:
                         params["select"] = ",".join(select_fields)
                     if mailto.strip():
                         params["mailto"] = mailto.strip()
 
                     with st.spinner("Consultando a API e gerando análise..."):
-                        js, status, paging_meta = get_works_paginated(
+                        js, status, paging_meta = fetch_works(
+                            strategy=strategy,
                             base_params=params,
                             filters=filters,
                             pages=int(pages),
@@ -808,9 +1016,11 @@ def main() -> None:
                         with st.expander("Detalhes técnicos do erro"):
                             st.json(js)
                     else:
+                        params["_strategy"] = strategy
                         params["_pages_requested"] = int(pages)
                         params["_pages_retrieved"] = paging_meta["pages_retrieved"]
-                        params["_offsets"] = paging_meta["offsets"]
+                        if "offsets" in paging_meta:
+                            params["_offsets"] = paging_meta["offsets"]
                         render_query_results(
                             query=query.strip(),
                             filters=filters,
@@ -820,6 +1030,7 @@ def main() -> None:
                             timeout=float(timeout),
                             top_authors_n=top_authors_n,
                             top_terms_n=top_terms_n,
+                            table_preview_rows=table_preview_rows,
                         )
 
     with doi_tab:

@@ -67,14 +67,22 @@ streamlit run streamlit_app.py
 
 A interface permite:
 - busca por query ou por DOI;
-- coleta multipágina (controle de `Rows por página` + `Páginas`) para retornar mais resultados;
+- coleta multipágina para retornar mais resultados;
+- escolha da estratégia de paginação (`cursor` recomendado para volume alto, ou `offset`);
 - filtros no formato `key=value`;
 - resumo automático da consulta (volume, anos e editora mais frequente);
 - ranking de autores mais frequentes;
 - ranking de termos mais frequentes nos títulos;
 - informações técnicas da API (status, message-type, items-per-page e parâmetros enviados);
 - gráficos de distribuição (anos, tipos, autores, termos, editoras e periódicos);
-- download dos resultados em JSON e CSV.
+- cache de consultas (com botão para limpar cache);
+- tabela otimizada com preview para evitar lentidão em datasets grandes;
+- download dos resultados em JSON, CSV e Parquet.
+
+Para análise maior, use por exemplo:
+- `Rows por página = 200`
+- `Páginas = 10`
+- `Paginação = cursor`
 
 ## Abrir no Google Colab
 
