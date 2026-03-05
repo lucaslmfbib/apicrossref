@@ -20,7 +20,7 @@ WORKS_ENDPOINT = "https://api.crossref.org/works"
 DOCS_URL = "https://api.crossref.org"
 DEFAULT_SELECT = (
     "DOI,title,issued,type,publisher,container-title,author,"
-    "reference-count,is-referenced-by-count,language"
+    "references-count,is-referenced-by-count,subject"
 )
 DEFAULT_FILTERS = "type=journal-article\nhas-references=true"
 
@@ -146,6 +146,37 @@ def parse_select(raw_select: str) -> List[str]:
     if not raw_select.strip():
         return []
     return [field.strip() for field in raw_select.split(",") if field.strip()]
+
+
+def extract_api_error_message(js: Dict[str, Any], fallback: str) -> str:
+    """Extrai mensagem amigável de erro retornada pela API."""
+    message = js.get("message")
+    if isinstance(message, list):
+        parts: List[str] = []
+        for entry in message:
+            if isinstance(entry, dict):
+                value = entry.get("value")
+                text = entry.get("message")
+                if value and text:
+                    parts.append(f"{value}: {text}")
+                elif text:
+                    parts.append(str(text))
+        if parts:
+            return " | ".join(parts)
+    if isinstance(message, str):
+        return message
+    return fallback
+
+
+def get_reference_count(item: Dict[str, Any]) -> Optional[int]:
+    """Compatibiliza nomes de campo de referências no retorno da API."""
+    value = item.get("reference-count")
+    if isinstance(value, int):
+        return value
+    value = item.get("references-count")
+    if isinstance(value, int):
+        return value
+    return None
 
 
 def rows_to_csv(rows: List[Dict[str, Any]]) -> str:
@@ -295,9 +326,7 @@ def build_work_summary(
     )
 
     reference_counts = [
-        int(item.get("reference-count"))
-        for item in items
-        if isinstance(item.get("reference-count"), int)
+        count for item in items for count in [get_reference_count(item)] if count is not None
     ]
 
     cited_counts = [
@@ -545,7 +574,7 @@ def render_doi_result(item: Dict[str, Any]) -> None:
     col1.metric("Ano", year if year is not None else "-")
     col2.metric("Tipo", item.get("type", "-"))
     col3.metric("Autores", len(authors))
-    col4.metric("Referências", item.get("reference-count", "-"))
+    col4.metric("Referências", get_reference_count(item) or "-")
     col5.metric("Citações", item.get("is-referenced-by-count", "-"))
 
     st.markdown("**Metadados principais**")
@@ -682,7 +711,10 @@ def main() -> None:
                     st.error(f"Erro de rede: {error}")
                 else:
                     if status != 200:
-                        st.error(f"A API retornou status {status}.")
+                        details = extract_api_error_message(js, "Verifique parâmetros de select/filtros.")
+                        st.error(f"A API retornou status {status}. {details}")
+                        with st.expander("Detalhes técnicos do erro"):
+                            st.json(js)
                     else:
                         render_query_results(
                             query=query.strip(),

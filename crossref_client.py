@@ -65,11 +65,16 @@ def get_works(
         headers=build_headers(mailto),
         timeout=timeout,
     )
+    try:
+        payload = response.json()
+    except ValueError:
+        payload = {"status": "failed", "message": response.text}
+
     if response.status_code == 200:
-        return response.json(), response.status_code
+        return payload, response.status_code
 
     LOGGER.error("Falha na consulta (%s): %s", response.status_code, response.text)
-    return {}, response.status_code
+    return payload, response.status_code
 
 
 def get_by_doi(

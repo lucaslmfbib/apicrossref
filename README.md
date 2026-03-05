@@ -20,6 +20,18 @@ source .venv/bin/activate
 pip install -r requirements.txt
 ```
 
+## Usar no VS Code (Python)
+
+Este projeto já inclui configuração em `.vscode/` para Python:
+- `launch.json`: executar Streamlit e CLI com um clique.
+- `settings.json`: usar automaticamente `.venv/bin/python`.
+- `extensions.json`: recomenda extensões Python.
+
+No VS Code:
+1. Abra a pasta do projeto.
+2. Crie/ative a venv e instale dependências.
+3. Vá em `Run and Debug` e execute `Streamlit: app`.
+
 ## Rodar no terminal (CLI)
 
 Consulta por texto livre:
@@ -62,6 +74,18 @@ A interface permite:
 - gráficos de distribuição (anos, tipos, autores, termos, editoras e periódicos);
 - download dos resultados em JSON e CSV.
 
+## Se a busca não funcionar
+
+Se a API retornar `400`, normalmente é por `select` ou `filter` inválido.
+
+Exemplo de `select` válido:
+
+```text
+DOI,title,issued,type,publisher,container-title,author,references-count,is-referenced-by-count,subject
+```
+
+O app agora mostra os detalhes técnicos do erro para facilitar correção.
+
 ## Deploy no Streamlit Community Cloud
 
 Repositório: [lucaslmfbib/apicrossref](https://github.com/lucaslmfbib/apicrossref)
@@ -82,3 +106,11 @@ Depois do deploy, a plataforma gera uma URL pública do app.
 - `--select` reduz campos retornados pela API.
 - `--mailto` é recomendado pela Crossref para identificação do cliente.
 - Em `--format both`, o script salva `<out>.json` e `<out>.csv`.
+
+## FAQ rápido
+
+**Por que existe a opção de e-mail (`mailto`)?**  
+A Crossref recomenda identificar quem está fazendo as requisições. Se houver uso indevido, erro recorrente ou necessidade de contato técnico, eles conseguem falar com o responsável.
+
+**Por que usar filtros?**  
+Filtros reduzem ruído e deixam a pesquisa precisa (ex.: só `journal-article`, por data, por idioma, por presença de referências). Isso melhora análise e desempenho.
