@@ -405,6 +405,86 @@ def render_api_details(
         st.json(js)
 
 
+def get_works_paginated(
+    *,
+    base_params: Dict[str, Any],
+    filters: Dict[str, str],
+    pages: int,
+    timeout: float,
+    mailto: Optional[str],
+) -> tuple[Dict[str, Any], int, Dict[str, Any]]:
+    """Consulta múltiplas páginas via offset e agrega os itens em um único payload."""
+    rows = int(base_params.get("rows", 25))
+    base_offset = int(base_params.get("offset", 0))
+    requested_pages = max(1, int(pages))
+
+    offsets: List[int] = []
+    items_all: List[Dict[str, Any]] = []
+    first_payload: Optional[Dict[str, Any]] = None
+    retrieved_pages = 0
+
+    for idx in range(requested_pages):
+        current_offset = base_offset + (idx * rows)
+        page_params = dict(base_params)
+        page_params["offset"] = current_offset
+        offsets.append(current_offset)
+
+        js, status = get_works(
+            page_params,
+            filters,
+            timeout=timeout,
+            mailto=mailto,
+        )
+        if status != 200:
+            return (
+                js,
+                status,
+                {
+                    "pages_requested": requested_pages,
+                    "pages_retrieved": retrieved_pages,
+                    "offsets": offsets,
+                },
+            )
+
+        if first_payload is None:
+            first_payload = js
+
+        page_items = js.get("message", {}).get("items", []) or []
+        items_all.extend(page_items)
+        retrieved_pages += 1
+
+        if len(page_items) < rows:
+            break
+
+    if first_payload is None:
+        return (
+            {},
+            500,
+            {
+                "pages_requested": requested_pages,
+                "pages_retrieved": 0,
+                "offsets": offsets,
+            },
+        )
+
+    merged = dict(first_payload)
+    merged_message = dict(first_payload.get("message", {}))
+    merged_message["items"] = items_all
+    merged_message["retrieved-pages"] = retrieved_pages
+    merged_message["retrieved-items"] = len(items_all)
+    merged["message"] = merged_message
+
+    return (
+        merged,
+        200,
+        {
+            "pages_requested": requested_pages,
+            "pages_retrieved": retrieved_pages,
+            "offsets": offsets,
+        },
+    )
+
+
 def render_query_results(
     *,
     query: str,
@@ -432,6 +512,9 @@ def render_query_results(
     top_terms_df = get_top_title_terms(items, top_n=top_terms_n)
 
     st.success(f"Consulta executada com sucesso. {len(items)} item(ns) retornado(s).")
+    retrieved_pages = message.get("retrieved-pages")
+    if retrieved_pages is not None:
+        st.caption(f"Coleta agregada em {retrieved_pages} página(s).")
     st.subheader("Resumo do trabalho")
 
     col1, col2, col3, col4, col5 = st.columns(5)
@@ -662,11 +745,13 @@ def main() -> None:
         with st.form("query_form"):
             query = st.text_input("Consulta", placeholder="deep learning")
 
-            col1, col2 = st.columns(2)
+            col1, col2, col3 = st.columns(3)
             with col1:
-                rows = st.number_input("Rows", min_value=1, max_value=1000, value=25, step=1)
+                rows = st.number_input("Rows por página", min_value=1, max_value=1000, value=100, step=1)
             with col2:
                 offset = st.number_input("Offset", min_value=0, max_value=100000, value=0, step=1)
+            with col3:
+                pages = st.number_input("Páginas", min_value=1, max_value=20, value=3, step=1)
 
             select_raw = st.text_input(
                 "Campos select (separados por vírgula; vazio = campos completos)",
@@ -687,6 +772,12 @@ def main() -> None:
                 try:
                     filters = parse_filters(filters_raw)
                     select_fields = parse_select(select_raw)
+                    target_total = int(rows) * int(pages)
+                    if target_total > 5000:
+                        st.warning(
+                            "Você solicitou muitos registros de uma vez. "
+                            "Pode ficar lento ou sofrer limite de API."
+                        )
 
                     params: Dict[str, Any] = {
                         "query": query.strip(),
@@ -699,9 +790,10 @@ def main() -> None:
                         params["mailto"] = mailto.strip()
 
                     with st.spinner("Consultando a API e gerando análise..."):
-                        js, status = get_works(
-                            params,
-                            filters,
+                        js, status, paging_meta = get_works_paginated(
+                            base_params=params,
+                            filters=filters,
+                            pages=int(pages),
                             timeout=float(timeout),
                             mailto=mailto.strip() or None,
                         )
@@ -716,6 +808,9 @@ def main() -> None:
                         with st.expander("Detalhes técnicos do erro"):
                             st.json(js)
                     else:
+                        params["_pages_requested"] = int(pages)
+                        params["_pages_retrieved"] = paging_meta["pages_retrieved"]
+                        params["_offsets"] = paging_meta["offsets"]
                         render_query_results(
                             query=query.strip(),
                             filters=filters,

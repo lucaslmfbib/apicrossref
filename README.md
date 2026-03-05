@@ -67,6 +67,7 @@ streamlit run streamlit_app.py
 
 A interface permite:
 - busca por query ou por DOI;
+- coleta multipágina (controle de `Rows por página` + `Páginas`) para retornar mais resultados;
 - filtros no formato `key=value`;
 - resumo automático da consulta (volume, anos e editora mais frequente);
 - ranking de autores mais frequentes;
