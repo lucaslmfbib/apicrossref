@@ -57,19 +57,19 @@ A interface permite:
 - filtros no formato `key=value`;
 - download dos resultados em JSON e CSV.
 
-## Publicar no GitHub
+## Deploy no Streamlit Community Cloud
 
-1. Crie um repositório vazio no GitHub.
-2. Conecte o remote e envie os arquivos:
+Repositório: [lucaslmfbib/apicrossref](https://github.com/lucaslmfbib/apicrossref)
 
-```bash
-git init
-git add .
-git commit -m "Crossref app com CLI e Streamlit"
-git branch -M main
-git remote add origin <URL_DO_REPOSITORIO>
-git push -u origin main
-```
+1. Acesse [share.streamlit.io](https://share.streamlit.io/) e faça login com GitHub.
+2. Clique em `New app`.
+3. Configure:
+   - Repository: `lucaslmfbib/apicrossref`
+   - Branch: `main`
+   - Main file path: `streamlit_app.py`
+4. Clique em `Deploy`.
+
+Depois do deploy, a plataforma gera uma URL pública do app.
 
 ## Observações
 

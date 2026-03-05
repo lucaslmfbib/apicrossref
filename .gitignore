@@ -1,3 +1,6 @@
 __pycache__/
 *.py[cod]
 outputs/
+.venv/
+.DS_Store
+.streamlit/secrets.toml
