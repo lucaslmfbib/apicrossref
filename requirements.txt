@@ -1,0 +1,4 @@
+requests>=2.28.0
+streamlit>=1.32.0
+# Opcional para abrir notebooks localmente:
+# jupyter>=1.0.0
