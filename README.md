@@ -55,6 +55,9 @@ streamlit run streamlit_app.py
 A interface permite:
 - busca por query ou por DOI;
 - filtros no formato `key=value`;
+- resumo automático da consulta (volume, anos e editora mais frequente);
+- ranking de autores mais frequentes;
+- ranking de termos mais frequentes nos títulos;
 - download dos resultados em JSON e CSV.
 
 ## Deploy no Streamlit Community Cloud

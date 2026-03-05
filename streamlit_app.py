@@ -3,15 +3,53 @@
 
 from __future__ import annotations
 
+from collections import Counter
 import csv
 import io
 import json
-from typing import Any, Dict, List
+import re
+from typing import Any, Dict, List, Optional
 
 import requests
 import streamlit as st
 
 from crossref_client import get_by_doi, get_works, normalize_item
+
+
+STOPWORDS = {
+    "a",
+    "an",
+    "and",
+    "as",
+    "at",
+    "by",
+    "de",
+    "do",
+    "dos",
+    "da",
+    "das",
+    "e",
+    "em",
+    "et",
+    "for",
+    "from",
+    "in",
+    "is",
+    "na",
+    "no",
+    "nos",
+    "of",
+    "on",
+    "or",
+    "os",
+    "para",
+    "por",
+    "the",
+    "to",
+    "um",
+    "uma",
+    "with",
+}
 
 
 def parse_filters(raw_filters: str) -> Dict[str, str]:
@@ -47,6 +85,79 @@ def rows_to_csv(rows: List[Dict[str, Any]]) -> str:
     writer.writeheader()
     writer.writerows(rows)
     return output.getvalue()
+
+
+def get_year(item: Dict[str, Any]) -> Optional[int]:
+    """Extrai ano de publicação de um item."""
+    year = item.get("issued", {}).get("date-parts", [[None]])[0][0]
+    if isinstance(year, int):
+        return year
+    return None
+
+
+def get_top_authors(items: List[Dict[str, Any]], top_n: int = 10) -> List[Dict[str, Any]]:
+    """Retorna autores mais frequentes entre os itens retornados."""
+    counter: Counter[str] = Counter()
+    for item in items:
+        for author in item.get("author", []) or []:
+            full_name = " ".join(filter(None, [author.get("given"), author.get("family")])).strip()
+            if full_name:
+                counter[full_name] += 1
+
+    return [{"autor": name, "frequencia": freq} for name, freq in counter.most_common(top_n)]
+
+
+def get_top_title_terms(items: List[Dict[str, Any]], top_n: int = 15) -> List[Dict[str, Any]]:
+    """Retorna termos mais frequentes dos títulos dos itens."""
+    counter: Counter[str] = Counter()
+    for item in items:
+        titles = item.get("title", []) or []
+        if not titles:
+            continue
+
+        title = titles[0].lower()
+        terms = re.findall(r"[a-zA-ZÀ-ÖØ-öø-ÿ0-9]+", title)
+        for term in terms:
+            if len(term) < 3 or term in STOPWORDS or term.isdigit():
+                continue
+            counter[term] += 1
+
+    return [{"termo": term, "frequencia": freq} for term, freq in counter.most_common(top_n)]
+
+
+def build_work_summary(
+    query: str,
+    filters: Dict[str, str],
+    items: List[Dict[str, Any]],
+    total_results: Any,
+) -> Dict[str, Any]:
+    """Monta resumo consolidado da consulta."""
+    years = [year for year in (get_year(item) for item in items) if year is not None]
+    doi_count = len({item.get("DOI") for item in items if item.get("DOI")})
+    unique_authors = {
+        " ".join(filter(None, [author.get("given"), author.get("family")])).strip()
+        for item in items
+        for author in (item.get("author", []) or [])
+        if " ".join(filter(None, [author.get("given"), author.get("family")])).strip()
+    }
+
+    publishers = Counter(
+        item.get("publisher", "").strip()
+        for item in items
+        if isinstance(item.get("publisher"), str) and item.get("publisher", "").strip()
+    )
+
+    return {
+        "query": query,
+        "filters_count": len(filters),
+        "returned": len(items),
+        "total_results": total_results,
+        "doi_count": doi_count,
+        "unique_authors_count": len(unique_authors),
+        "year_min": min(years) if years else None,
+        "year_max": max(years) if years else None,
+        "top_publisher": publishers.most_common(1)[0] if publishers else None,
+    }
 
 
 st.set_page_config(page_title="Crossref Explorer", page_icon="📚", layout="wide")
@@ -115,6 +226,44 @@ with query_tab:
                     total_results = message.get("total-results", "?")
                     st.success(f"Consulta executada. {len(items)} itens retornados.")
                     st.write(f"Total de resultados informados pela API: {total_results}")
+
+                    summary = build_work_summary(query.strip(), filters, items, total_results)
+                    top_authors = get_top_authors(items)
+                    top_terms = get_top_title_terms(items)
+
+                    st.subheader("Resumo do trabalho")
+                    st.write(
+                        f"Consulta '{summary['query']}' com {summary['filters_count']} filtro(s) retornou "
+                        f"{summary['returned']} itens nesta página."
+                    )
+
+                    metric1, metric2, metric3, metric4 = st.columns(4)
+                    metric1.metric("Registros retornados", summary["returned"])
+                    metric2.metric("DOIs únicos", summary["doi_count"])
+                    metric3.metric("Autores únicos", summary["unique_authors_count"])
+                    metric4.metric("Total na API", summary["total_results"])
+
+                    if summary["year_min"] is not None and summary["year_max"] is not None:
+                        st.write(f"Faixa de anos dos resultados: {summary['year_min']} - {summary['year_max']}")
+
+                    if summary["top_publisher"]:
+                        publisher, freq = summary["top_publisher"]
+                        st.write(f"Editora mais frequente: {publisher} ({freq} registro(s))")
+
+                    stats_col1, stats_col2 = st.columns(2)
+                    with stats_col1:
+                        st.markdown("**Autores mais frequentes**")
+                        if top_authors:
+                            st.dataframe(top_authors, use_container_width=True, hide_index=True)
+                        else:
+                            st.info("Sem autores identificados nos itens retornados.")
+
+                    with stats_col2:
+                        st.markdown("**Termos mais frequentes nos títulos**")
+                        if top_terms:
+                            st.dataframe(top_terms, use_container_width=True, hide_index=True)
+                        else:
+                            st.info("Sem termos suficientes para análise de frequência.")
 
                     if normalized:
                         st.dataframe(normalized, use_container_width=True)
