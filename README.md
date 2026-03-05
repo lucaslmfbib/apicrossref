@@ -58,6 +58,8 @@ A interface permite:
 - resumo automático da consulta (volume, anos e editora mais frequente);
 - ranking de autores mais frequentes;
 - ranking de termos mais frequentes nos títulos;
+- informações técnicas da API (status, message-type, items-per-page e parâmetros enviados);
+- gráficos de distribuição (anos, tipos, autores, termos, editoras e periódicos);
 - download dos resultados em JSON e CSV.
 
 ## Deploy no Streamlit Community Cloud
