@@ -133,7 +133,7 @@ def inject_styles() -> None:
         }
 
         .author-signature {
-            margin-top: 0.88rem;
+            margin-bottom: 0.72rem;
             color: #21483a;
             font-weight: 600;
         }
@@ -913,6 +913,7 @@ def main() -> None:
     st.markdown(
         """
         <div class="hero">
+            <div class="author-signature">Elaborado pelo Bibliotecário Lucas Martins</div>
             <div class="hero-links">
                 <a href="https://www.linkedin.com/in/lucaslmf/" target="_blank">LinkedIn</a>
                 <a href="https://github.com/lucaslmfbib" target="_blank">GitHub</a>
@@ -926,7 +927,6 @@ def main() -> None:
             <span class="pill">Endpoint /works</span>
             <span class="pill">Análise bibliométrica rápida</span>
             <span class="pill">Export JSON/CSV</span>
-            <div class="author-signature">Feito pelo Bibliotecário Lucas Martins</div>
         </div>
         """,
         unsafe_allow_html=True,
