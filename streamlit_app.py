@@ -99,6 +99,27 @@ def inject_styles() -> None:
             margin: 0;
         }
 
+        .hero-links {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.55rem;
+            margin-bottom: 0.75rem;
+        }
+
+        .hero-links a {
+            text-decoration: none;
+            background: #ffffff;
+            border: 1px solid #cfe4da;
+            color: #1f4c3d;
+            border-radius: 999px;
+            padding: 0.22rem 0.72rem;
+            font-size: 0.83rem;
+        }
+
+        .hero-links a:hover {
+            background: #edf7f2;
+        }
+
         .pill {
             display: inline-block;
             background: #eef7f2;
@@ -109,6 +130,12 @@ def inject_styles() -> None:
             font-size: 0.8rem;
             margin-right: 0.35rem;
             margin-top: 0.35rem;
+        }
+
+        .author-signature {
+            margin-top: 0.88rem;
+            color: #21483a;
+            font-weight: 600;
         }
 
         div[data-testid="stMetric"] {
@@ -886,6 +913,11 @@ def main() -> None:
     st.markdown(
         """
         <div class="hero">
+            <div class="hero-links">
+                <a href="https://www.linkedin.com/in/lucaslmf/" target="_blank">LinkedIn</a>
+                <a href="https://github.com/lucaslmfbib" target="_blank">GitHub</a>
+                <a href="https://www.instagram.com/lucaslmf_/" target="_blank">Instagram</a>
+            </div>
             <h1>Crossref Insight Studio</h1>
             <p>
                 Explore metadados da API Crossref com foco em resumo do trabalho,
@@ -894,6 +926,7 @@ def main() -> None:
             <span class="pill">Endpoint /works</span>
             <span class="pill">Análise bibliométrica rápida</span>
             <span class="pill">Export JSON/CSV</span>
+            <div class="author-signature">Feito pelo Bibliotecário Lucas Martins</div>
         </div>
         """,
         unsafe_allow_html=True,
